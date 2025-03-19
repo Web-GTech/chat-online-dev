@@ -1,117 +1,118 @@
-const socket = new WebSocket('ws://localhost:8080'); 
-const loginForm = document.querySelector('.login__form');
-const chatSection = document.querySelector('.chat');
-const loginSection = document.querySelector('.login');
-const chatInput = document.querySelector('.chat__input');
-const chatForm = document.querySelector('.chat__form');
-const chatMessages = document.querySelector('.chat__messages');
-const notificationSound = document.getElementById('notification-sound');
-const emojiButton = document.querySelector('.emoji-button');
-const emojiPicker = document.querySelector('.emoji-picker');
-const emojiList = document.querySelector('.emoji-list');
-const alertBox = document.querySelector('.alert-box');
+// Seleção de elementos
+const login = document.querySelector(".login");
+const loginForm = login.querySelector(".login__form");
+const loginInput = login.querySelector(".login__input");
 
-let userName = '';
+const chat = document.querySelector(".chat");
+const chatForm = chat.querySelector(".chat__form");
+const chatInput = chat.querySelector(".chat__input");
+const chatMessages = chat.querySelector(".chat__messages");
+const typingIndicator = chat.querySelector(".typing-indicator");
+const emojiButton = chat.querySelector(".emoji-button");
+const emojiPopup = chat.querySelector(".emoji-popup");
+const closeEmojiPopupButton = chat.querySelector(".close-emoji-popup");
+const emojiElements = chat.querySelectorAll(".emoji");
+
+const messageSound = new Audio("/frontend/sounds/message.mp3");
+const sendMessageSound = new Audio("../frontend/sounds/message.mp3");
+const joinSound = new Audio("/sounds/join.mp3");
+
+let websocket;
+let user = { id: "", name: "", color: "" };
 let typingTimeout;
 
-// Tocar som de notificação
-function playNotificationSound() {
-    notificationSound.play().catch(error => console.error("Erro ao tocar o som:", error));
-}
-
-// Exibir alerta estilizado
-function showAlert(message) {
-    alertBox.textContent = message;
-    alertBox.style.display = "block";
-    setTimeout(() => {
-        alertBox.style.display = "none";
-    }, 3000);
-}
-
-// Exibir indicador de digitação
-function showTypingIndicator(user) {
-    let typingIndicator = document.querySelector('.typing-indicator');
-    if (!typingIndicator) {
-        typingIndicator = document.createElement('div');
-        typingIndicator.classList.add('typing-indicator');
-        document.body.appendChild(typingIndicator);
-    }
-    typingIndicator.innerHTML = `${user} <span class="dots"><span>.</span><span>.</span><span>.</span></span>`;
-    typingIndicator.style.display = 'block';
-    clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => hideTypingIndicator(), 3000);
-}
-
-// Esconder indicador de digitação
-function hideTypingIndicator() {
-    const typingIndicator = document.querySelector('.typing-indicator');
-    if (typingIndicator) {
-        typingIndicator.style.display = 'none';
-    }
-}
-
-socket.onmessage = (event) => {
-    let data;
-    try {
-        data = JSON.parse(event.data);
-    } catch (error) {
-        console.error("Erro ao analisar a mensagem do WebSocket:", error);
-        return;
-    }
-
-    if (data.type === 'chat-message') {
-        const messageElement = document.createElement('div');
-        messageElement.classList.add('message', data.sender === userName ? 'message--self' : 'message--other');
-        messageElement.innerHTML = `<span class="sender-name">${data.sender}:</span> ${data.message}`;
-        chatMessages.appendChild(messageElement);
-        playNotificationSound();
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-
-    if (data.type === 'user-connected') {
-        showAlert(`${data.userName} entrou no chat.`);
-    }
-
-    if (data.type === 'typing') {
-        showTypingIndicator(data.userName);
-    }
+const createMessageElement = (content, sender, senderColor) => {
+    const div = document.createElement("div");
+    div.classList.add(sender === user.name ? "message--self" : "message--other");
+    div.innerHTML = `<span style="color:${senderColor};">${sender}</span>: ${content}`;
+    return div;
 };
 
-// Login do usuário
-loginForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const input = document.querySelector('.login__input');
-    if (!input.value.trim()) {
-        alert("Por favor, insira um nome de usuário!");
+const showAlert = (message) => {
+    const alertBox = document.createElement("div");
+    alertBox.textContent = message;
+    alertBox.style.position = "absolute";
+    alertBox.style.top = "10px";
+    alertBox.style.left = "50%";
+    alertBox.style.transform = "translateX(-50%)";
+    alertBox.style.padding = "10px";
+    alertBox.style.backgroundColor = "#4CAF50";
+    alertBox.style.color = "white";
+    alertBox.style.borderRadius = "5px";
+    document.body.appendChild(alertBox);
+    setTimeout(() => alertBox.remove(), 3000);
+};
+
+const processMessage = ({ data }) => {
+    const { userId, userName, userColor, content, type } = JSON.parse(data);
+
+    if (type === "typing") {
+        typingIndicator.textContent = `${userName} digitando...`;
+        typingIndicator.style.display = "block";
+        clearTimeout(typingTimeout);
+        typingTimeout = setTimeout(() => typingIndicator.style.display = "none", 1500);
         return;
     }
-    userName = input.value.trim();
-    socket.send(JSON.stringify({ type: 'user-connected', userName }));
-    loginSection.style.display = 'none';
-    chatSection.style.display = 'flex';
-});
 
-// Exibir ou ocultar o seletor de emojis
-emojiButton.addEventListener('click', (event) => {
+    if (type === "join") {
+        showAlert(`${userName} entrou`);
+        joinSound.play().catch(console.log);
+        return;
+    }
+
+    const message = createMessageElement(content, userName, userColor);
+    chatMessages.appendChild(message);
+    messageSound.play().catch(console.log);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+};
+
+const handleLogin = (event) => {
+    event.preventDefault()
+
+    user.id = crypto.randomUUID()
+    user.name = loginInput.value
+    user.color = getRandomColor()
+
+    login.style.display = "none"
+    chat.style.display = "flex"
+
+    websocket = new WebSocket("ws:chat-dev-e927.onrender.com")
+    websocket.onmessage = processMessage
+};
+
+const sendMessage = (event) => {
     event.preventDefault();
-    emojiPicker.style.display = emojiPicker.style.display === 'block' ? 'none' : 'block';
+    const message = {
+        userId: user.id,
+        userName: user.name,
+        userColor: user.color,
+        content: chatInput.value
+    };
+    websocket.send(JSON.stringify(message));
+    sendMessageSound.play().catch(console.log);
+    chatInput.value = "";
+};
+
+const notifyTyping = () => {
+    websocket.send(JSON.stringify({ type: "typing", userName: user.name }));
+};
+
+loginForm.addEventListener("submit", handleLogin);
+chatForm.addEventListener("submit", sendMessage);
+chatInput.addEventListener("input", notifyTyping);
+
+// Emoji Popup
+emojiButton.addEventListener("click", () => {
+    emojiPopup.style.display = emojiPopup.style.display === "none" ? "block" : "none";
 });
 
-// Inserir emoji ao clicar
-emojiList.addEventListener('click', (event) => {
-    if (event.target.tagName === 'SPAN') {
-        chatInput.value += event.target.textContent;
+closeEmojiPopupButton.addEventListener("click", () => {
+    emojiPopup.style.display = "none";
+});
+
+emojiElements.forEach((emoji) => {
+    emoji.addEventListener("click", () => {
+        chatInput.value += emoji.textContent;
         chatInput.focus();
-        emojiPicker.style.display = 'none';
-    }
-});
-
-// Enviar mensagem
-chatForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const message = chatInput.value.trim();
-    if (message !== "") {
-        socket.send(JSON.stringify({ type: 'chat-message', sender: userName, message }));
-        chatInput.value = "";
-    }
+    });
 });
